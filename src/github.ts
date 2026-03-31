@@ -109,13 +109,28 @@ export async function commitAndOpenPR(
   const { owner, repo, baseBranch, prNumber, files, token } = opts;
   const branch = `translate/pr-${prNumber}`;
 
-  // 1. Get HEAD commit SHA of base branch
+  // 1. Get HEAD commit SHA of base branch (fall back to repo default if branch was deleted)
   const refRes = await ghFetch(
     `${GITHUB_API}/repos/${owner}/${repo}/git/ref/heads/${baseBranch}`,
     {},
     token,
+    /* allowNotFound */ true,
   );
-  const { object: { sha: headSha } } = await refRes.json<{ object: { sha: string } }>();
+
+  let headSha: string;
+  if (refRes.status === 404) {
+    console.warn(`Base branch '${baseBranch}' not found; falling back to repo default branch`);
+    const repoRes = await ghFetch(`${GITHUB_API}/repos/${owner}/${repo}`, {}, token);
+    const { default_branch } = await repoRes.json<{ default_branch: string }>();
+    const defaultRefRes = await ghFetch(
+      `${GITHUB_API}/repos/${owner}/${repo}/git/ref/heads/${default_branch}`,
+      {},
+      token,
+    );
+    ({ object: { sha: headSha } } = await defaultRefRes.json<{ object: { sha: string } }>());
+  } else {
+    ({ object: { sha: headSha } } = await refRes.json<{ object: { sha: string } }>());
+  }
 
   // 2. Get tree SHA of that commit
   const commitRes = await ghFetch(

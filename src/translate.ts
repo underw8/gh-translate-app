@@ -17,6 +17,9 @@ export async function translateMarkdown(
 
   switch (provider) {
     case 'openai':
+      if (!env.OPENAI_API_KEY) {
+        throw new Error('OPENAI_API_KEY is required when TRANSLATION_PROVIDER=openai');
+      }
       chunkFn = translateOpenAI;
       apiKey = env.OPENAI_API_KEY;
       break;
