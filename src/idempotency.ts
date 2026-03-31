@@ -22,8 +22,11 @@ export async function getTranslationRecord(
   try {
     return JSON.parse(raw) as TranslationRecord;
   } catch {
-    // Legacy plain-string value (just a URL) — treat as if no record exists so
-    // the job is re-processed and the record is migrated to the new format.
+    // Legacy plain-string value (just a URL) or corrupted KV entry — treat as if
+    // no record exists so the job is re-processed and the record is migrated to
+    // the new format. Note: KV corruption will also reach this branch and trigger
+    // a re-translation rather than silently skipping; acceptable trade-off.
+    console.warn(`idempotency: failed to parse KV value for key '${key(owner, repo, prNumber)}', treating as missing`);
     return null;
   }
 }

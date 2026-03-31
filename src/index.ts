@@ -1,4 +1,4 @@
-import { getInstallationToken, getPullRequestFiles, getCompareFiles, getFileContent, commitAndOpenPR } from './github';
+import { getInstallationToken, getPullRequestFiles, getCompareFiles, getFileContent, commitAndOpenPR, TRANSLATION_BRANCH_PREFIX } from './github';
 import { translateMarkdown } from './translate';
 import { getTranslationRecord, setTranslationRecord } from './idempotency';
 import type { Env, QueueMessage } from './types';
@@ -42,7 +42,7 @@ export default {
     }
 
     // Skip PRs opened by this bot to prevent infinite translation loops
-    if (payload.pull_request.head.ref.startsWith('translate/')) {
+    if (payload.pull_request.head.ref.startsWith(TRANSLATION_BRANCH_PREFIX)) {
       return new Response('OK', { status: 200 });
     }
 
@@ -117,7 +117,11 @@ async function verifySignature(body: string, signatureHeader: string, secret: st
 async function processJob(job: QueueMessage, env: Env): Promise<void> {
   const { prNumber, owner, repo, headSha, baseBranch, installationId, prTitle } = job;
 
-  // 1. Idempotency / incremental-update check
+  // 1. Idempotency / incremental-update check.
+  // Note: KV does not provide atomic compare-and-set, so two simultaneous queue
+  // deliveries for the same PR could both pass this check. GitHub's branch/PR
+  // deduplication in commitAndOpenPR prevents duplicate PRs from persisting, but
+  // a brief window of duplicate work is possible.
   const existing = await getTranslationRecord(env.IDEMPOTENCY_KV, owner, repo, prNumber);
 
   if (existing) {

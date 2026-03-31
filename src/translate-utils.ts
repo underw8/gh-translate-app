@@ -61,6 +61,11 @@ export function getAddedLineRanges(patch: string): LineRange[] {
   return ranges;
 }
 
+/**
+ * Splits content on level-1 and level-2 markdown headings only (`# ` / `## `).
+ * Intentionally limited to top-level headings to avoid over-splitting large docs.
+ * Returns the original content as a single-element array if no headings are found.
+ */
 export function splitOnHeadings(content: string): string[] {
   const parts = content.split(/(?=\n#{1,2} )/);
   if (parts.length <= 1) return [content];
