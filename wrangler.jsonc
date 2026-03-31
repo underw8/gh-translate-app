@@ -1,0 +1,41 @@
+{
+  "name": "gh-translate-worker",
+  "main": "src/index.ts",
+  "compatibility_date": "2024-11-01",
+  "compatibility_flags": ["nodejs_compat"],
+  // Opt into 5-minute CPU limit (I/O wait on API calls does not count)
+  // "limits": {
+  //   "cpu_ms": 300000,
+  // },
+  "queues": {
+    "producers": [
+      {
+        "binding": "PR_QUEUE",
+        "queue": "pr-translation-jobs",
+      },
+    ],
+    "consumers": [
+      {
+        "queue": "pr-translation-jobs",
+        "max_batch_size": 1,
+        "max_batch_timeout": 30,
+        "max_retries": 3,
+        "retry_delay": 30,
+        "dead_letter_queue": "pr-translation-dlq",
+        "max_concurrency": 2,
+      },
+    ],
+  },
+  "kv_namespaces": [
+    {
+      "binding": "IDEMPOTENCY_KV",
+      "id": "e5a5e0ba29694d72b5350f66035be5f5",
+    },
+  ],
+  "observability": {
+    "logs": {
+      "enabled": true,
+      "invocation_logs": true,
+    },
+  },
+}
