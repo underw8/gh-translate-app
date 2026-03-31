@@ -63,6 +63,28 @@ export async function getPullRequestFiles(
   return files.filter(f => f.status !== 'removed' && /\.mdx?$/.test(f.filename));
 }
 
+/**
+ * Returns markdown files that changed between two commits (used for incremental
+ * updates when new commits are pushed to an open PR).
+ * The GitHub compare API caps results at 300 files; pagination is not supported,
+ * but that is well above any realistic docs PR.
+ */
+export async function getCompareFiles(
+  owner: string,
+  repo: string,
+  baseSha: string,
+  headSha: string,
+  token: string,
+): Promise<PullRequestFile[]> {
+  const res = await ghFetch(
+    `${GITHUB_API}/repos/${owner}/${repo}/compare/${baseSha}...${headSha}`,
+    {},
+    token,
+  );
+  const { files = [] } = await res.json<{ files?: PullRequestFile[] }>();
+  return files.filter(f => f.status !== 'removed' && /\.mdx?$/.test(f.filename));
+}
+
 // ---------------------------------------------------------------------------
 // File content
 // ---------------------------------------------------------------------------
