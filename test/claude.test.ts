@@ -26,7 +26,7 @@ describe('translateChunk (Claude provider)', () => {
 
     const call = spy.mock.calls[0];
     expect(call).toBeDefined();
-    const [_url, init] = call!;
+    const [, init] = call!;
     const headers = init!.headers as Record<string, string>;
     const body = JSON.parse(init!.body as string);
 

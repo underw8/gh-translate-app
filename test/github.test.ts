@@ -56,6 +56,12 @@ describe('getFileContent', () => {
     expect(result).toBe(original);
   });
 
+  it('returns null for symlinks', async () => {
+    mockFetch({ type: 'symlink', content: '', encoding: 'base64' });
+    const result = await getFileContent('org', 'repo', 'docs/link.md', 'abc123', 'token');
+    expect(result).toBeNull();
+  });
+
   it('throws for unexpected encoding', async () => {
     mockFetch({ content: 'raw', encoding: 'utf-8' });
     await expect(
