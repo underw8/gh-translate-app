@@ -3,7 +3,7 @@ export interface Env {
   GITHUB_APP_ID: string;
   GITHUB_APP_PRIVATE_KEY: string;
   GITHUB_WEBHOOK_SECRET: string;
-  OPENAI_API_KEY: string;
+  OPENAI_API_KEY?: string;
   TARGET_LANG: string;
 
   // Optional: 'openai' (default) or 'claude'
