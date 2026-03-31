@@ -145,7 +145,7 @@ async function processJob(job: QueueMessage, env: Env): Promise<void> {
   for (const file of files) {
     const original = await getFileContent(owner, repo, file.filename, headSha, token);
     if (original === null) continue; // skip symlinks
-    const translated = await translateMarkdown(original, env.TARGET_LANG, env);
+    const translated = await translateMarkdown(original, env.TARGET_LANG, env, file.patch);
     translatedFiles.push({ path: file.filename, content: translated });
   }
 
