@@ -32,6 +32,8 @@ export interface PullRequestFile {
   filename: string;
   status: 'added' | 'removed' | 'modified' | 'renamed' | 'copied' | 'changed' | 'unchanged';
   sha: string;
+  /** Unified diff patch — may be absent for binary files or diffs exceeding GitHub's 300 KB cap */
+  patch?: string;
 }
 
 /** Minimal GitHub API error shape */
