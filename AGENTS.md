@@ -2,6 +2,8 @@
 
 A GitHub App that automatically translates markdown documents found in a pull request and opens a new PR containing the translated files, powered by OpenAI or Claude and hosted on Cloudflare Workers.
 
+What the heck is this?
+
 ---
 
 ## Architecture Overview
@@ -146,10 +148,10 @@ Use the `jose` library (PKCS#8 + RS256). Re-generate at the start of each queue 
 
 The provider is selected via `TRANSLATION_PROVIDER` (default: `openai`). Routing lives in `src/translate.ts`; shared utilities (system prompt, retry logic, chunking) live in `src/translate-utils.ts`.
 
-| Provider | Env var | Model | Notes |
-|---|---|---|---|
-| `openai` (default) | `OPENAI_API_KEY` | `gpt-4o-mini` | `temperature: 0.1`, system message in `messages[]` |
-| `claude` | `ANTHROPIC_API_KEY` | `claude-haiku-4-5-20251001` | system prompt in top-level `system` field, `anthropic-version: 2023-06-01` header |
+| Provider           | Env var             | Model                       | Notes                                                                             |
+| ------------------ | ------------------- | --------------------------- | --------------------------------------------------------------------------------- |
+| `openai` (default) | `OPENAI_API_KEY`    | `gpt-4o-mini`               | `temperature: 0.1`, system message in `messages[]`                                |
+| `claude`           | `ANTHROPIC_API_KEY` | `claude-haiku-4-5-20251001` | system prompt in top-level `system` field, `anthropic-version: 2023-06-01` header |
 
 Both providers share the same system prompt, chunking strategy (split on headings for files >300KB), and exponential backoff (6 retries, 1s→2s→4s…60s cap, ±25% jitter) for 429 errors.
 

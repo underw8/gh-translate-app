@@ -2,6 +2,9 @@ import { importPKCS8, SignJWT } from 'jose';
 import type { PullRequestFile } from './types';
 
 const GITHUB_API = 'https://api.github.com';
+
+/** Branch name prefix used for all translation PRs. Must match the skip-check in the webhook handler. */
+export const TRANSLATION_BRANCH_PREFIX = 'translate/';
 const GITHUB_ACCEPT = 'application/vnd.github+json';
 const GITHUB_API_VERSION = '2022-11-28';
 
@@ -63,6 +66,28 @@ export async function getPullRequestFiles(
   return files.filter(f => f.status !== 'removed' && /\.mdx?$/.test(f.filename));
 }
 
+/**
+ * Returns markdown files that changed between two commits (used for incremental
+ * updates when new commits are pushed to an open PR).
+ * The GitHub compare API caps results at 300 files; pagination is not supported,
+ * but that is well above any realistic docs PR.
+ */
+export async function getCompareFiles(
+  owner: string,
+  repo: string,
+  baseSha: string,
+  headSha: string,
+  token: string,
+): Promise<PullRequestFile[]> {
+  const res = await ghFetch(
+    `${GITHUB_API}/repos/${owner}/${repo}/compare/${baseSha}...${headSha}`,
+    {},
+    token,
+  );
+  const { files = [] } = await res.json<{ files?: PullRequestFile[] }>();
+  return files.filter(f => f.status !== 'removed' && /\.mdx?$/.test(f.filename));
+}
+
 // ---------------------------------------------------------------------------
 // File content
 // ---------------------------------------------------------------------------
@@ -85,7 +110,12 @@ export async function getFileContent(
   if (data.encoding !== 'base64') {
     throw new Error(`Unexpected encoding: ${data.encoding}`);
   }
-  return atob(data.content.replace(/\n/g, ''));
+  // GitHub wraps base64 at 60 chars; strip those newlines before decoding.
+  // Use TextDecoder to correctly handle multi-byte UTF-8 characters (e.g. CJK,
+  // Arabic, emoji) that atob() alone would silently corrupt via Latin-1 mapping.
+  const binary = atob(data.content.replace(/\n/g, ''));
+  const bytes = Uint8Array.from(binary, c => c.charCodeAt(0));
+  return new TextDecoder().decode(bytes);
 }
 
 // ---------------------------------------------------------------------------
@@ -107,7 +137,7 @@ export async function commitAndOpenPR(
   targetLang: string,
 ): Promise<string> {
   const { owner, repo, baseBranch, prNumber, files, token } = opts;
-  const branch = `translate/pr-${prNumber}`;
+  const branch = `${TRANSLATION_BRANCH_PREFIX}pr-${prNumber}`;
 
   // 1. Get HEAD commit SHA of base branch (fall back to repo default if branch was deleted)
   const refRes = await ghFetch(
@@ -256,7 +286,7 @@ async function ghFetch(
 
   if (!res.ok && !(allowNotFound && res.status === 404)) {
     const body = await res.text();
-    throw new Error(`GitHub API error ${res.status} ${url}: ${body}`);
+    throw new Error(`GitHub API error ${res.status} ${url}: ${body.slice(0, 500)}`);
   }
 
   return res;

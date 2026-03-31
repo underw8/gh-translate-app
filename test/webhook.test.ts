@@ -74,13 +74,39 @@ describe('Webhook handler', () => {
     expect(res.status).toBe(405);
   });
 
-  it('returns 401 for missing or invalid signature', async () => {
+  it('returns 401 for an invalid (tampered) signature', async () => {
     const body = makePRPayload();
     const req = new Request('http://localhost/webhook', {
       method: 'POST',
       headers: {
         'x-github-event': 'pull_request',
         'x-hub-signature-256': 'sha256=badhash',
+      },
+      body,
+    });
+    const res = await worker.fetch(req, makeEnv() as never);
+    expect(res.status).toBe(401);
+  });
+
+  it('returns 401 when signature header is missing', async () => {
+    const body = makePRPayload();
+    const req = new Request('http://localhost/webhook', {
+      method: 'POST',
+      headers: { 'x-github-event': 'pull_request' },
+      body,
+    });
+    const res = await worker.fetch(req, makeEnv() as never);
+    expect(res.status).toBe(401);
+  });
+
+  it('returns 401 when signature is signed with wrong secret', async () => {
+    const body = makePRPayload();
+    const signature = await signBody(body, 'wrong-secret');
+    const req = new Request('http://localhost/webhook', {
+      method: 'POST',
+      headers: {
+        'x-github-event': 'pull_request',
+        'x-hub-signature-256': signature,
       },
       body,
     });

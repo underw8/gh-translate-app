@@ -1,4 +1,4 @@
-import { getInstallationToken, getPullRequestFiles, getFileContent, commitAndOpenPR } from './github';
+import { getInstallationToken, getPullRequestFiles, getCompareFiles, getFileContent, commitAndOpenPR, TRANSLATION_BRANCH_PREFIX } from './github';
 import { translateMarkdown } from './translate';
 import { getTranslationRecord, setTranslationRecord } from './idempotency';
 import type { Env, QueueMessage } from './types';
@@ -42,7 +42,7 @@ export default {
     }
 
     // Skip PRs opened by this bot to prevent infinite translation loops
-    if (payload.pull_request.head.ref.startsWith('translate/')) {
+    if (payload.pull_request.head.ref.startsWith(TRANSLATION_BRANCH_PREFIX)) {
       return new Response('OK', { status: 200 });
     }
 
@@ -117,14 +117,26 @@ async function verifySignature(body: string, signatureHeader: string, secret: st
 async function processJob(job: QueueMessage, env: Env): Promise<void> {
   const { prNumber, owner, repo, headSha, baseBranch, installationId, prTitle } = job;
 
-  // 1. Idempotency check — skip if already translated
+  // 1. Idempotency / incremental-update check.
+  // Note: KV does not provide atomic compare-and-set, so two simultaneous queue
+  // deliveries for the same PR could both pass this check. GitHub's branch/PR
+  // deduplication in commitAndOpenPR prevents duplicate PRs from persisting, but
+  // a brief window of duplicate work is possible.
   const existing = await getTranslationRecord(env.IDEMPOTENCY_KV, owner, repo, prNumber);
+
   if (existing) {
-    console.log(`PR #${prNumber} already translated: ${existing}`);
+    if (existing.headSha === headSha) {
+      // Exact same SHA already processed — this is a queue redelivery, nothing to do
+      console.log(`PR #${prNumber} already translated at ${headSha}, skipping`);
+      return;
+    }
+    // New commits were pushed to the PR — translate only the incremental diff
+    console.log(`PR #${prNumber}: update detected (${existing.headSha.slice(0, 7)}→${headSha.slice(0, 7)}), translating incremental diff`);
+    await processUpdate(job, existing.headSha, existing.prUrl, env);
     return;
   }
 
-  // 2. Authenticate with GitHub
+  // 2. First-time translation — authenticate with GitHub
   const token = await getInstallationToken(
     env.GITHUB_APP_ID,
     env.GITHUB_APP_PRIVATE_KEY,
@@ -162,7 +174,52 @@ async function processJob(job: QueueMessage, env: Env): Promise<void> {
   );
 
   // 6. Record success so queue redeliveries are no-ops
-  await setTranslationRecord(env.IDEMPOTENCY_KV, owner, repo, prNumber, prUrl);
+  await setTranslationRecord(env.IDEMPOTENCY_KV, owner, repo, prNumber, { prUrl, headSha });
 
   console.log(`PR #${prNumber}: translation PR opened at ${prUrl}`);
+}
+
+async function processUpdate(job: QueueMessage, prevSha: string, prUrl: string, env: Env): Promise<void> {
+  const { prNumber, owner, repo, headSha, baseBranch, installationId, prTitle } = job;
+
+  const token = await getInstallationToken(
+    env.GITHUB_APP_ID,
+    env.GITHUB_APP_PRIVATE_KEY,
+    installationId,
+  );
+
+  // Diff between the last processed commit and the new HEAD
+  const files = await getCompareFiles(owner, repo, prevSha, headSha, token);
+  if (files.length === 0) {
+    console.log(`PR #${prNumber}: no markdown changes since ${prevSha.slice(0, 7)}, skipping`);
+    await setTranslationRecord(env.IDEMPOTENCY_KV, owner, repo, prNumber, { prUrl, headSha });
+    return;
+  }
+
+  console.log(`PR #${prNumber}: ${files.length} file(s) changed since last translation`);
+
+  const translatedFiles: Array<{ path: string; content: string }> = [];
+  for (const file of files) {
+    const original = await getFileContent(owner, repo, file.filename, headSha, token);
+    if (original === null) continue;
+    const translated = await translateMarkdown(original, env.TARGET_LANG, env, file.patch);
+    translatedFiles.push({ path: file.filename, content: translated });
+  }
+
+  if (translatedFiles.length === 0) {
+    console.log(`PR #${prNumber}: all changed markdown files were symlinks, skipping`);
+    await setTranslationRecord(env.IDEMPOTENCY_KV, owner, repo, prNumber, { prUrl, headSha });
+    return;
+  }
+
+  // Push a new commit to the existing translation branch (commitAndOpenPR force-updates the ref)
+  await commitAndOpenPR(
+    { owner, repo, baseBranch, prNumber, files: translatedFiles, token },
+    prTitle,
+    env.TARGET_LANG,
+  );
+
+  await setTranslationRecord(env.IDEMPOTENCY_KV, owner, repo, prNumber, { prUrl, headSha });
+
+  console.log(`PR #${prNumber}: translation branch updated for ${headSha.slice(0, 7)}`);
 }
